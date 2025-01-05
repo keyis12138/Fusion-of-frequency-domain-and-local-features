@@ -29,7 +29,8 @@ class DataReader():
 
     def __getitem__(self, index):
         img, target =Image.open(self.img[index]).convert('RGB'), self.label[index]
-        img = img.resize((224, 224), Image.ANTIALIAS)
+        # img = img.resize((256, 256), Image.ANTIALIAS)旧版pillow
+        img = img.resize((256, 256), Image.LANCZOS)
         self.transform = transforms.Compose([transforms.ToTensor(),
                                              transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])])
         img = self.transform(img)

@@ -3,6 +3,8 @@ import torch.nn as nn
 import torchvision.models as models
 from model.base_model import BaseModel
 import config
+import patch_generator
+import datareader
 '''
 dataloader
 model
@@ -13,7 +15,32 @@ options
 '''
 
 
-class xxmodel(nn.model):
+def DFT(input):
+    if input.dim() != 4 or input.shape[1] != 3:
+        raise ValueError("输入张量必须是形状为 (batchsize, 3, H, W) 的四维张量.")
+    processed_batch = []
+    for tensor in input:  # 遍历每个样本 (3, H, W)
+        processed_channels = []
+        for c in range(tensor.shape[0]):  # 遍历 R、G、B 通道
+            fft = torch.fft.fft2(tensor[c])
+            fft_shifted = torch.fft.fftshift(fft)  # 中心化频谱
+            magnitude = torch.abs(fft_shifted)  # 计算幅值
+            log_magnitude = torch.log(1 + magnitude)  # 对数增强
+            processed_channels.append(log_magnitude)
+        processed_tensor = torch.stack(processed_channels, dim=0)  # 形状为 (C, H, W)
+        processed_batch.append(processed_tensor)
+    return torch.stack(processed_batch, dim=0)  # (batchsize, 3, H, W)
+
+
+def select_localfc(input):
+    processed_batch = []
+    for tensor in input:
+        result, _ = patch_generator.smash_n_reconstruct(tensor)
+        processed_batch.append(result)
+    return torch.stack(processed_batch, dim=0)  # (batchsize, 3, H, W)
+
+
+class xxmodel(nn.Module):
     def __init__(self):
         super(xxmodel,self).__init__()
         self.resnet = models.resnet50(pretrained=True)
@@ -22,6 +49,7 @@ class xxmodel(nn.model):
         self.ac = nn.ReLU()
         self.fc = nn.Linear(128,1)
     def forward(self,x):
+        xlocal = x.clone()
         output = 0
         return output
 
