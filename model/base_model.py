@@ -5,15 +5,17 @@ import torch.nn as nn
 from torch.nn import init
 from torch.optim import lr_scheduler
 
+import config
+
 
 class BaseModel(nn.Module):
-    def __init__(self, opt):
+    def __init__(self):
         super(BaseModel, self).__init__()
-        self.opt = opt
+        self.opt = config
         self.total_steps = 0
-        self.isTrain = opt.isTrain
-        self.save_dir = os.path.join(opt.checkpoints_dir, opt.name)
-        self.device = torch.device('cuda:{}'.format(opt.gpu_ids[0])) if opt.gpu_ids else torch.device('cpu')
+        self.isTrain = config.isTrain
+        self.save_dir = os.path.join(config.checkpoints_dir, config.name)
+        self.device = torch.device("cuda" if torch.cuda.is_available() else torch.device('cpu'))
 
     def save_networks(self, epoch):
         save_filename = 'model_epoch_%s.pth' % epoch
@@ -43,7 +45,7 @@ class BaseModel(nn.Module):
         self.model.load_state_dict(state_dict['model'])
         self.total_steps = state_dict['total_steps']
 
-        if self.isTrain and not self.opt.new_optim:
+        if self.isTrain:
             self.optimizer.load_state_dict(state_dict['optimizer'])
             ### move optimizer state to GPU
             for state in self.optimizer.state.values():

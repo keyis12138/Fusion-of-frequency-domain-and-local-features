@@ -2,6 +2,8 @@ import PIL.Image
 import cv2
 import numpy as np
 import random
+
+import torch
 from PIL import Image
 from torchvision.transforms.functional import crop
 import torchvision.transforms as transforms
@@ -17,21 +19,18 @@ def img_to_patches(img) -> tuple:
     ## parameters:
     - input_path: Accepts input path of the image
     """
-    img = transforms.ToPILImage()(img)
     patch_size = 32
     grayscale_imgs = []
     imgs = []
-    # channels,height, width  = img.shape
-    height, width = img.size
+    channels, height, width = img.shape
+    # height, width = image.size
     for i in range(0, height, patch_size):
         for j in range(0, width, patch_size):
             box = (i, j, patch_size, patch_size)
-            img_color = np.asarray(crop(img, *box))
-            img_color = img_color.astype(np.uint8)
+            img_color = crop(img, *box)
             # img_color =crop(img,*box).numpy()
-            # grayscale_image = img_color[2]*0.299+img_color[1]*0.587+img_color[0]*0.114
-            grayscale_image = img_color[:, :, 0] * 0.299 + img_color[:, :, 1] * 0.587 + img_color[:, :, 2] * 0.114
-            grayscale_image = grayscale_image.astype(np.uint8)
+            grayscale_image = img_color[0] * 0.299 + img_color[1] * 0.587 + img_color[2] * 0.114
+            #grayscale_image = img_color[:, :, 0] * 0.299 + img_color[:, :, 1] * 0.587 + img_color[:, :, 2] * 0.114
             grayscale_imgs.append(grayscale_image)
             imgs.append(img_color)
     return grayscale_imgs,imgs
@@ -41,20 +40,21 @@ def img_to_patches(img) -> tuple:
 def get_l1(v,x,y):
     l1 = v[:,1:y]
     # 1 to m, 1 to m-1   
-    return np.sum(np.abs(v[:,0:y-1]-l1))
+    return torch.sum(torch.abs(v[:, 0:y - 1] - l1))
 
 def get_l2(v,x,y):
     l2 = v[1:x]
     # 1 to m-1, 1 to m
-    return np.sum(np.abs(v[0:x-1]-l2))
+    return torch.sum(torch.abs(v[0:x - 1] - l2))
 
 def get_l3l4(v,x,y):
     l3 = v[1:x,1:y]
     l4 = v[0:x-1,1:y]
     # 1 to m-1, 1 to m-1
-    return np.sum(np.abs(v[0:x-1,0:x-1]-l3))+np.sum(np.abs(v[1:x,0:y-1]-l4))
+    return torch.sum(torch.abs(v[0:x - 1, 0:x - 1] - l3)) + torch.sum(torch.abs(v[1:x, 0:y - 1] - l4))
 
-def get_pixel_var_degree_for_patch(patch:np.array)->int:
+
+def get_pixel_var_degree_for_patch(patch) -> int:
     """
     gives pixel variation for a given patch
     ---------------------------------------
@@ -76,11 +76,12 @@ def extract_rich_and_poor_textures(variance_values:list, patches:list):
     - variance_values: list of values that are pixel variances of each patch
     - color_patches: coloured patches of the target image
     """
-    threshold = np.mean(variance_values)
+    variance_tensor = torch.tensor(variance_values)
+    threshold = torch.mean(variance_tensor)
     rich_texture_patches = []
     poor_texture_patches = []
-    for i,j in enumerate(variance_values):
-        if j >= threshold:
+    for i, j in enumerate(variance_values):
+        if j >= threshold.item():
             rich_texture_patches.append(patches[i])
         else:
             poor_texture_patches.append(patches[i])
@@ -90,27 +91,22 @@ def extract_rich_and_poor_textures(variance_values:list, patches:list):
 
 
 def get_complete_image(patches:list, coloured=True):
-    """
-    Develops complete 265x256 image from rich and poor texture patches
-    ------------------------------------------------------------------
-    ## parameters:
-    - patches: Takes a list of rich or poor texture patches
-    """
     random.shuffle(patches)
     p_len = len(patches)
     while len(patches)<64:
         patches.append(patches[random.randint(0, p_len-1)])
-    if(coloured==True):
-        grid = np.asarray(patches).reshape((8,8,32,32,3))
+    patches_tensor = torch.stack(patches)
+    if coloured:
+        grid = patches_tensor.view(8, 8, 32, 32, 3)
     else:
-        grid = np.asarray(patches).reshape((8,8,32,32))
-
-
+        grid = patches_tensor.view(8, 8, 32, 32)
+    
     # joins columns to only leave rows
-    rows = [np.concatenate(grid[i,:], axis=1) for i in range(8)]
-
+    rows = [torch.cat([grid[i, j] for j in range(8)], dim=1) for i in range(8)]
+    
     # joins the rows to create the final image
-    img = np.concatenate(rows,axis=0)
+    img = torch.cat(rows, dim=0)
+    
     return img
 
 
@@ -136,8 +132,10 @@ def smash_n_reconstruct(input, coloured=True):
     else:
         r_patch,p_patch = extract_rich_and_poor_textures(variance_values=pixel_var_degree,patches=gray_scale_patches)
     rich_texture = get_complete_image(r_patch, coloured)
-    poor_texture = get_complete_image(p_patch, coloured)
-    # poor_texture = None
-    rich_texture = transforms.ToTensor()(rich_texture)
+    rich_texture = rich_texture.permute(2, 0, 1)  # Convert to CxHxW format
+    # poor_texture = get_complete_image(p_patch, coloured)
+    poor_texture = None
+    #rich_texture = transforms.ToTensor()(rich_texture)
+
     return rich_texture, poor_texture
 
